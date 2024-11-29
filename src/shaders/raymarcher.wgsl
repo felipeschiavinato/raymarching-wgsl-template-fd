@@ -32,58 +32,59 @@ struct march_output {
   outline : bool,
 };
 
-fn op_smooth_union(d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f
-{
-  var k_eps = max(k, 0.0001);
-  return vec4f(col1, d1);
+// Smooth Union
+fn op_smooth_union(d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f {
+  var k_2 = max(k, 0.001);
+  let h = clamp(0.5 + 0.5 * (d2 - d1) / k_2, 0.0, 1.0);
+  let d = mix(d2, d1, h) - k * h * (1.0 - h);
+  let col = mix(col2, col1, h);
+  return vec4f(col, d);
 }
 
-fn op_smooth_subtraction(d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f
-{
-  var k_eps = max(k, 0.0001);
-  return vec4f(col1, d1);
+fn op_smooth_subtraction(d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f {
+  var k_2 = max(k, 0.001);
+  let h = clamp(0.5 - 0.5 * (d2 + d1) / k_2, 0.0, 1.0);
+  let d = mix(d2, -d1, h) + k * h * (1.0 - h);
+  let col = mix(col2, col1, h);
+  return vec4f(col, d);
 }
 
-fn op_smooth_intersection(d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f
-{
-  var k_eps = max(k, 0.0001);
-  return vec4f(col1, d1);
+// Smooth Intersection
+fn op_smooth_intersection(d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f {
+  var k_2 = max(k, 0.001);
+  let h = clamp(0.5 - 0.5 * (d2 - d1) / k_2, 0.0, 1.0);
+  let d = mix(d2, d1, h) + k * h * (1.0 - h);
+  let col = mix(col2, col1, h);
+  return vec4f(col, d);
 }
 
-fn op(op: f32, d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f
-{
-  // union
-  if (op < 1.0)
-  {
+// CSG Operations
+fn op(op_type: f32, d1: f32, d2: f32, col1: vec3f, col2: vec3f, k: f32) -> vec4f {
+  // Union
+  if (op_type < 1.0) {
     return op_smooth_union(d1, d2, col1, col2, k);
   }
-
-  // subtraction
-  if (op < 2.0)
-  {
+  // Subtraction
+  if (op_type < 2.0) {
     return op_smooth_subtraction(d2, d1, col2, col1, k);
   }
-
-  // intersection
+  // Intersection
   return op_smooth_intersection(d2, d1, col2, col1, k);
 }
 
-fn repeat(p: vec3f, offset: vec3f) -> vec3f
-{
-  return vec3f(0.0);
+// Repeat Function
+fn repeat(p: vec3f, offset: vec3f) -> vec3f {
+  return p - offset * floor(p / offset + 0.5);
 }
 
-fn transform_p(p: vec3f, option: vec2f) -> vec3f
-{
-  // normal mode
-  if (option.x <= 1.0)
-  {
+// Transform Point with Options
+fn transform_p(p: vec3f, option: vec2f) -> vec3f {
+  if (option.x <= 1.0) {
     return p;
   }
-
-  // return repeat / mod mode
   return repeat(p, vec3f(option.y));
 }
+
 
 fn scene(p: vec3f) -> vec4f // xyz = color, w = distance
 {
@@ -98,20 +99,38 @@ fn scene(p: vec3f) -> vec4f // xyz = color, w = distance
 
     for (var i = 0; i < all_objects_count; i = i + 1)
     {
-      // get shape and shape order (shapesinfo)
-      // shapesinfo has the following format:
-      // x: shape type (0: sphere, 1: box, 2: torus)
-      // y: shape index
-      // order matters for the operations, they're sorted on the CPU side
 
-      // call transform_p and the sdf for the shape
-      // call op function with the shape operation
+        let shape_info = shapesinfob[i];
+        let shape_type = shape_info.x;
+        let shape_index = i32(shape_info.y);
+        let shape = shapesb[shape_index];
+        
+        let animated_transform = animate(shape.animate_transform.xyz, shape.animate_transform.w, 0.0);
+        let animated_rotation = animate(shape.animate_rotation.xyz, shape.animate_rotation.w, 0.0);
 
-      // op format:
-      // x: operation (0: union, 1: subtraction, 2: intersection)
-      // y: k value
-      // z: repeat mode (0: normal, 1: repeat)
-      // w: repeat offset
+        let quaternion = quaternion_from_euler(animated_rotation + shape.rotation.xyz);
+
+
+        var p_transformed = p - (shape.transform.xyz + animated_transform);
+        p_transformed = transform_p(p_transformed, shape.op.zw);
+
+        
+        var dist: f32;
+        let color = shape.color.xyz;
+        
+        if (shape_type < 1.0)
+        {
+          dist = sdf_sphere(p_transformed, shape.radius, quaternion);
+        } else if (shape_type < 2.0)   {
+          dist = sdf_round_box(p_transformed, shape.radius.xyz, shape.radius.w, quaternion);
+        } else if (shape_type < 3.0)  {
+          dist = sdf_torus(p_transformed, shape.radius.xy,  quaternion);
+        } else {
+          dist = MAX_DIST;
+        }
+
+        var aux = vec4f(shape.color.xyz, dist);
+        result = op(shape.op.x, result.w, aux.w, result.xyz, color, shape.op.y);
     }
 
     return result;
@@ -123,14 +142,24 @@ fn march(ro: vec3f, rd: vec3f) -> march_output
   var EPSILON = uniforms[23];
 
   var depth = 0.0;
-  var color = vec3f(0.0);
+  var color = vec3f(1.0);
   var march_step = uniforms[22];
   
   for (var i = 0; i < max_marching_steps; i = i + 1)
   {
-      // raymarch algorithm
-      // call scene function and march
-      // if the depth is greater than the max distance or the distance is less than the epsilon, break
+      let p = ro + depth * rd;
+      let res = scene(p);
+      
+      if (res.w < EPSILON) {
+          color = res.xyz;
+          return march_output(color, depth, false);
+      }
+      
+      if (depth > MAX_DIST) {
+          return march_output(color, depth, false);
+      }
+      
+      depth += res.w * march_step;
   }
 
   return march_output(color, depth, false);
@@ -138,13 +167,41 @@ fn march(ro: vec3f, rd: vec3f) -> march_output
 
 fn get_normal(p: vec3f) -> vec3f
 {
-  return vec3f(0.0);
+  let EPSILON = uniforms[23];
+  let dx = vec3f(EPSILON, 0.0, 0.0);
+  let dy = vec3f(0.0, EPSILON, 0.0);
+  let dz = vec3f(0.0, 0.0, EPSILON);
+
+  let n = vec3f(
+    scene(p + dx).w - scene(p - dx).w,
+    scene(p + dy).w - scene(p - dy).w,
+    scene(p + dz).w - scene(p - dz).w
+  );
+
+  return normalize(n);
 }
 
 // https://iquilezles.org/articles/rmshadows/
 fn get_soft_shadow(ro: vec3f, rd: vec3f, tmin: f32, tmax: f32, k: f32) -> f32
 {
-  return 0.0;
+  var res = 1.0;
+  var t = tmin;
+  var EPSILON = uniforms[23];
+
+  for (var i = 0; i < 256; i = i + 1) {
+    let h = scene(ro + rd * t).w;
+    if (h < EPSILON) {
+      return 0.0;
+    }
+    res = min(res, k * h / t);
+    t += h;
+
+    if (t >= tmax) {
+      break;
+    }
+  }
+
+  return res;
 }
 
 fn get_AO(current: vec3f, normal: vec3f) -> f32
@@ -193,13 +250,20 @@ fn get_light(current: vec3f, obj_color: vec3f, rd: vec3f) -> vec3f
     return ambient;
   }
 
-  // calculate the light intensity
-  // Use:
-  // - shadow
-  // - ambient occlusion (optional)
-  // - ambient light
-  // - object color
-  return ambient;
+  let light_dir = normalize(light_position - current);
+  var diffuse = max(dot(normal, light_dir), 0.0);
+
+  // Shadows
+  let shadow = get_soft_shadow(current, light_dir, 0.1, uniforms[25], 1/uniforms[21]);
+  diffuse *= shadow;
+
+  // Ambient Occlusion
+  let ao = get_AO(current, normal);
+
+  // Combine
+  let color = obj_color * diffuse * sun_color * ao + ambient * obj_color * ao;
+
+  return color;
 }
 
 fn set_camera(ro: vec3f, ta: vec3f, cr: f32) -> mat3x3<f32>
@@ -213,7 +277,14 @@ fn set_camera(ro: vec3f, ta: vec3f, cr: f32) -> mat3x3<f32>
 
 fn animate(val: vec3f, time_scale: f32, offset: f32) -> vec3f
 {
-  return vec3f(0.0);
+    var time = uniforms[0];
+
+    let x = val.x * -cos(time * time_scale + offset);
+    let y = val.y * sin(time * time_scale + offset);
+    let z = val.z * sin(time * time_scale + offset);
+
+    // Return the result as a vec3f
+    return vec3f(x, y, z);
 }
 
 @compute @workgroup_size(THREAD_COUNT, 1, 1)
@@ -253,10 +324,18 @@ fn render(@builtin(global_invocation_id) id : vec3u)
   uv.y = -uv.y;
   var rd = camera * normalize(vec3(uv, 1.0));
 
-  // call march function and get the color/depth
-  // move ray based on the depth
-  // get light
-  var color = vec3f(1.0);
+  // Call march function and get the color/depth
+  let res = march(ro, rd);
+
+  // If hit
+  var color: vec3f;
+  if (res.depth < uniforms[20]) {
+    let current = ro + rd * res.depth;
+    color = get_light(current, res.color, rd);
+  } else {
+    // Background color
+    color = get_ambient_light(vec3f(uniforms[13], uniforms[14], uniforms[15]), int_to_rgb(i32(uniforms[16])), rd);
+  }
   
   // display the result
   color = linear_to_gamma(color);

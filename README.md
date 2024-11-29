@@ -1,6 +1,6 @@
-## WGSL Raymarcher Template
-Template básico de um Ray Marcher em WGSL (WEBGPU). Tudo o que precisa para fazer o projeto esta aqui.
-
+## Conceito
+- Tentando o conceito A+
+- Weird implementado
 ### ⚠️ Atenção
 
 O projeto provavelmente não vai rodar em linux, já que a GPU não fica acessível pro WGSL.

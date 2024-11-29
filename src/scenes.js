@@ -429,24 +429,36 @@ async function Weird()
 {
     return {
         spheres: [
+            // Main sphere
+            new Shape("Sphere", [0, 1, 0, 0], [1, 1, 1, 1.5], [0, 0, 0, 0], [0, 0.2, 2.0, 10.0], [0.5, 0, 0.5, 0], [0, 0, 0, 0], [0, 0, 0, 0]),
+            // Subtracting a rotating box from the sphere
+            new Shape("Sphere", [0, 1, 0, 0], [1, 1, 1, 1], [45, 45, 45, 0], [0, 0.01, 2.0, 10.0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]),
+            // Adding another sphere with union operation
+            new Shape("Sphere", [1, 1, 0, 0], [0.5, 0.5, 0.5, 1], [0, 0, 0, 0], [0, 0.1, 2.0, 10.0], [1, 0, 0, 0], [0, 0, 0, 2], [0, 0, 0, 0]),
+            // Intersecting torus
+            new Shape("Torus", [0, 1, 0, 0], [1, 0.2, 1, 1], [0, 0, 45, 0], [0, 0.01, 2.0, 10.0], [0, 0, 1, 0], [0, 0, 0, 3], [0, 0, 0, 0]),
         ],
         boxes: [
+            // Additional box for effect
+            new Shape("Box", [-1, 1, 0, 0], [0.5, 0.5, 0.5, 0.01], [0, 45, 0, 0], [0, 0.01, 2.0, 10.0], [1, 1, 0, 0], [0, 0, 0, 2], [0, 0, 0, 0]),
         ],
         toruses: [
+            // Another torus with subtraction
+            new Shape("Torus", [0, 1, 0, 0], [0.5, 0.1, 0.5, 1], [0, 0, 0, 0], [0, 0.01, 2.0, 10.0], [1, 1, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0]),
         ],
-        backgroundColor: [0.10196078431372549, 0.44313725490196076, 1],
-        maxMarchingSteps: 100,
-        showFloor: 0,
+        backgroundColor: [0.5, 0.2, 0.7],
+        maxMarchingSteps: 200,
+        showFloor: 1,
         mandelbulb: 0,
-        weirdScene: 1,
-        farPlane: 700,
-        softShadowK: 0.24,
-        marchingStep: 1,
-        outlinePostProcess: 0,
-        outlineWidth: 0.05,
-        sunColor: [0.98, 1, 0.9],
-        backgroundColor2: [0.7, 0.75, 0.85],
-        backgroundColor3: [0.418, 0.394, 0.372],
+        weirdScene: 0,
+        farPlane: 1000,
+        softShadowK: 0.5,
+        marchingStep: 0.5,
+        outlinePostProcess: 1,
+        outlineWidth: 0.1,
+        sunColor: [1, 0.9, 0.8],
+        backgroundColor2: [0.4, 0.4, 0.8],
+        backgroundColor3: [0.2, 0.2, 0.5],
     };
 }
 
